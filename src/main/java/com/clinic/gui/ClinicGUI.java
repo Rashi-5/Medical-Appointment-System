@@ -1,12 +1,10 @@
 package com.clinic.gui;
 
-import com.clinic.decorator.ReminderDecorator;
+import com.clinic.ClinicApplication;
 import com.clinic.decorator.SearchDecorator;
-import com.clinic.diary.Diary;
 import com.clinic.factory.*;
 import com.clinic.model.Appointment;
 import com.clinic.model.ReminderType;
-import com.clinic.reminder.DefaultReminderService;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -18,18 +16,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Simple Swing GUI for the Medical Appointment System.
- * Demonstrates the Factory Method pattern: the user picks CSV / XML / Database
- * storage from a dropdown and the factory creates the correct Diary without
- * the application knowing which implementation is used.
+ * Swing GUI — delegates all diary operations to ClinicApplication,
+ * which owns the factory and diary (as per the Q3 class diagram).
  */
 public class ClinicGUI extends JFrame {
 
-    // --- State ---
-    private Diary diary;
-    private SearchDecorator searchDiary;
+    private final ClinicApplication app;
 
-    // --- Top panel: storage selection ---
+    // --- Top panel ---
     private JComboBox<String> storageCombo;
     private JLabel activeStorageLabel;
 
@@ -46,16 +40,18 @@ public class ClinicGUI extends JFrame {
     private JTextField phoneField;
     private JTextField searchField;
 
-    // --- Log area ---
+    // --- Log ---
     private JTextArea logArea;
 
-    public ClinicGUI() {
+    public ClinicGUI(ClinicApplication app) {
         super("Medical Appointment System — Q3 Factory Method Demo");
+        this.app = app;
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(900, 650);
+        setSize(900, 680);
         setLocationRelativeTo(null);
         buildUI();
-        applyStorage("CSV");   // default storage on startup
+        activeStorageLabel.setText("Active: CSV");
+        refreshTable(app.viewAppointments());
     }
 
     // -------------------------------------------------------------------------
@@ -65,7 +61,6 @@ public class ClinicGUI extends JFrame {
     private void buildUI() {
         setLayout(new BorderLayout(8, 8));
         getRootPane().setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-
         add(buildTopPanel(),    BorderLayout.NORTH);
         add(buildCenterPanel(), BorderLayout.CENTER);
         add(buildLogPanel(),    BorderLayout.SOUTH);
@@ -96,7 +91,7 @@ public class ClinicGUI extends JFrame {
     private JPanel buildFormPanel() {
         JPanel p = new JPanel(new GridBagLayout());
         p.setBorder(BorderFactory.createTitledBorder("Appointment Details"));
-        p.setPreferredSize(new Dimension(280, 0));
+        p.setPreferredSize(new Dimension(290, 0));
 
         GridBagConstraints lc = new GridBagConstraints();
         lc.anchor = GridBagConstraints.WEST;
@@ -114,22 +109,19 @@ public class ClinicGUI extends JFrame {
         emailField   = new JTextField(14);
         phoneField   = new JTextField(14);
 
-        addRow(p, "Patient Name:", patientField, lc, fc, 0);
-        addRow(p, "Doctor Name:",  doctorField,  lc, fc, 1);
-        addRow(p, "Date (yyyy-MM-dd):", dateField, lc, fc, 2);
-        addRow(p, "Time (HH:mm):",  timeField,   lc, fc, 3);
-        addRow(p, "Email:",         emailField,  lc, fc, 4);
-        addRow(p, "Phone:",         phoneField,  lc, fc, 5);
+        addRow(p, "Patient Name:",      patientField, lc, fc, 0);
+        addRow(p, "Doctor Name:",       doctorField,  lc, fc, 1);
+        addRow(p, "Date (yyyy-MM-dd):", dateField,    lc, fc, 2);
+        addRow(p, "Time (HH:mm):",      timeField,    lc, fc, 3);
+        addRow(p, "Email:",             emailField,   lc, fc, 4);
+        addRow(p, "Phone:",             phoneField,   lc, fc, 5);
 
-        // Action buttons
         JButton addBtn    = new JButton("Add Appointment");
         JButton deleteBtn = new JButton("Delete Selected");
-
         addBtn.setBackground(new Color(70, 130, 180));
-        addBtn.setForeground(Color.blue);
+        addBtn.setForeground(Color.BLUE);
         deleteBtn.setBackground(new Color(178, 34, 34));
-        deleteBtn.setForeground(Color.red);
-
+        deleteBtn.setForeground(Color.RED);
         addBtn.addActionListener(e    -> addAppointment());
         deleteBtn.addActionListener(e -> deleteSelected());
 
@@ -138,7 +130,6 @@ public class ClinicGUI extends JFrame {
         bc.fill = GridBagConstraints.HORIZONTAL;
         bc.insets = new Insets(8, 6, 4, 6);
         p.add(addBtn, bc);
-
         bc.gridy = 7;
         bc.insets = new Insets(2, 6, 8, 6);
         p.add(deleteBtn, bc);
@@ -146,11 +137,9 @@ public class ClinicGUI extends JFrame {
         // Reminder section
         JPanel reminderPanel = new JPanel(new GridBagLayout());
         reminderPanel.setBorder(BorderFactory.createTitledBorder("Send Reminder (Decorator)"));
-
         JComboBox<ReminderType> reminderCombo = new JComboBox<>(ReminderType.values());
         JButton reminderBtn = new JButton("Send Reminder");
         reminderBtn.addActionListener(e -> sendReminder((ReminderType) reminderCombo.getSelectedItem()));
-
         GridBagConstraints rc = new GridBagConstraints();
         rc.fill = GridBagConstraints.HORIZONTAL; rc.weightx = 1.0;
         rc.insets = new Insets(4, 4, 4, 4); rc.gridx = 0; rc.gridy = 0;
@@ -161,16 +150,13 @@ public class ClinicGUI extends JFrame {
         // Search section
         JPanel searchPanel = new JPanel(new GridBagLayout());
         searchPanel.setBorder(BorderFactory.createTitledBorder("Search (SearchDecorator)"));
-
         searchField = new JTextField(12);
         JButton searchPatientBtn = new JButton("By Patient");
         JButton searchDoctorBtn  = new JButton("By Doctor");
         JButton showAllBtn       = new JButton("Show All");
-
         searchPatientBtn.addActionListener(e -> searchByPatient());
         searchDoctorBtn.addActionListener(e  -> searchByDoctor());
-        showAllBtn.addActionListener(e        -> refreshTable(diary.getAllAppointments()));
-
+        showAllBtn.addActionListener(e       -> refreshTable(app.viewAppointments()));
         GridBagConstraints sc = new GridBagConstraints();
         sc.fill = GridBagConstraints.HORIZONTAL; sc.weightx = 1.0;
         sc.insets = new Insets(4, 4, 2, 4); sc.gridx = 0; sc.gridy = 0; sc.gridwidth = 2;
@@ -182,17 +168,14 @@ public class ClinicGUI extends JFrame {
         sc.gridx = 0; sc.gridy = 2; sc.gridwidth = 2;
         searchPanel.add(showAllBtn, sc);
 
-        // Stack reminder + search below buttons
         GridBagConstraints sec = new GridBagConstraints();
         sec.gridx = 0; sec.gridwidth = 2; sec.fill = GridBagConstraints.HORIZONTAL;
         sec.weightx = 1.0; sec.insets = new Insets(6, 4, 4, 4);
-
         sec.gridy = 8;
         p.add(reminderPanel, sec);
         sec.gridy = 9;
         p.add(searchPanel, sec);
 
-        // Push everything to the top
         GridBagConstraints filler = new GridBagConstraints();
         filler.gridx = 0; filler.gridy = 10; filler.weighty = 1.0;
         p.add(new JLabel(), filler);
@@ -246,27 +229,20 @@ public class ClinicGUI extends JFrame {
     }
 
     // -------------------------------------------------------------------------
-    // Business Logic
+    // Business Logic — all calls go through ClinicApplication
     // -------------------------------------------------------------------------
 
     private void applyStorage(String type) {
-        DiaryFactory factory;
         String base = System.getProperty("user.home") + "/clinic_data/";
-
-        factory = switch (type) {
+        DiaryFactory factory = switch (type) {
             case "XML"      -> new XMLDiaryFactory(base + "appointments.xml");
             case "Database" -> new DatabaseDiaryFactory("jdbc:sqlite:" + base + "appointments.db");
             default         -> new CSVDiaryFactory(base + "appointments.csv");
         };
-
-        Diary baseDiary = factory.createDiary();
-        ReminderDecorator reminderDiary = new ReminderDecorator(baseDiary, new DefaultReminderService());
-        searchDiary = new SearchDecorator(reminderDiary);
-        diary = searchDiary;
-
+        app.setFactory(factory);
         activeStorageLabel.setText("Active: " + type);
-        log("Storage switched to " + type + " — factory created diary without exposing implementation.");
-        refreshTable(diary.getAllAppointments());
+        log("Storage switched to " + type + " — ClinicApplication used factory to create new diary.");
+        refreshTable(app.viewAppointments());
     }
 
     private void addAppointment() {
@@ -285,8 +261,7 @@ public class ClinicGUI extends JFrame {
             LocalDate date = LocalDate.parse(dateStr);
             LocalTime time = LocalTime.parse(timeStr);
 
-            // Check for timeslot conflict
-            boolean conflict = diary.getAllAppointments().stream()
+            boolean conflict = app.viewAppointments().stream()
                 .anyMatch(a -> a.getDate().equals(date) && a.getTime().equals(time));
             if (conflict) {
                 showError("Timeslot already booked: " + date + " at " + time);
@@ -297,11 +272,11 @@ public class ClinicGUI extends JFrame {
             Appointment a = new Appointment(id, patient, doctor, date, time);
             a.setEmail(email);
             a.setPhone(phone);
-            diary.addAppointment(a);
+            app.bookAppointment(a);
 
             log("Added: " + a + (email.isEmpty() ? "" : " | email: " + email)
                               + (phone.isEmpty() ? "" : " | phone: " + phone));
-            refreshTable(diary.getAllAppointments());
+            refreshTable(app.viewAppointments());
             patientField.setText("");
             doctorField.setText("");
             emailField.setText("");
@@ -315,25 +290,25 @@ public class ClinicGUI extends JFrame {
         int row = table.getSelectedRow();
         if (row < 0) { showError("Select an appointment to delete."); return; }
         String id = (String) tableModel.getValueAt(row, 0);
-        diary.deleteAppointment(id);
+        app.cancelAppointment(id);
         log("Deleted appointment ID: " + id);
-        refreshTable(diary.getAllAppointments());
+        refreshTable(app.viewAppointments());
     }
 
     private void sendReminder(ReminderType type) {
         int row = table.getSelectedRow();
         if (row < 0) { showError("Select an appointment first."); return; }
         String id = (String) tableModel.getValueAt(row, 0);
-        Appointment a = diary.getAppointment(id);
-        diary.setReminder(id, type);
+        Appointment a = app.getDiary().getAppointment(id);
+        app.sendReminder(id, type);
 
         String contact = switch (type) {
             case EMAIL -> a != null && !a.getEmail().isBlank() ? a.getEmail() : "(no email on record)";
             case SMS, PUSH_NOTIFICATION -> a != null && !a.getPhone().isBlank() ? a.getPhone() : "(no phone on record)";
-            case ALL   -> {
+            case ALL -> {
                 String e = a != null && !a.getEmail().isBlank() ? a.getEmail() : "(no email)";
-                String p = a != null && !a.getPhone().isBlank() ? a.getPhone() : "(no phone)";
-                yield e + " & " + p;
+                String ph = a != null && !a.getPhone().isBlank() ? a.getPhone() : "(no phone)";
+                yield e + " & " + ph;
             }
         };
         log("[" + type + " REMINDER] → " + contact + " for appointment " + id);
@@ -341,16 +316,18 @@ public class ClinicGUI extends JFrame {
 
     private void searchByPatient() {
         String q = searchField.getText().trim();
-        if (q.isEmpty()) { refreshTable(diary.getAllAppointments()); return; }
-        List<Appointment> results = searchDiary.searchByPatient(q);
+        if (q.isEmpty()) { refreshTable(app.viewAppointments()); return; }
+        SearchDecorator sd = (SearchDecorator) app.getDiary();
+        List<Appointment> results = sd.searchByPatient(q);
         refreshTable(results);
         log("Patient search \"" + q + "\": " + results.size() + " result(s).");
     }
 
     private void searchByDoctor() {
         String q = searchField.getText().trim();
-        if (q.isEmpty()) { refreshTable(diary.getAllAppointments()); return; }
-        List<Appointment> results = searchDiary.searchByDoctor(q);
+        if (q.isEmpty()) { refreshTable(app.viewAppointments()); return; }
+        SearchDecorator sd = (SearchDecorator) app.getDiary();
+        List<Appointment> results = sd.searchByDoctor(q);
         refreshTable(results);
         log("Doctor search \"" + q + "\": " + results.size() + " result(s).");
     }
@@ -364,8 +341,8 @@ public class ClinicGUI extends JFrame {
         }
     }
 
-    private void log(String message) {
-        logArea.append(message + "\n");
+    private void log(String msg) {
+        logArea.append(msg + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
     }
 
